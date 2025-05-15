@@ -1,14 +1,37 @@
 import requests
 import time
+import logging
+from colorlog import ColoredFormatter
 from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 from dotenv import load_dotenv
 import os
 from datetime import datetime
 
-load_dotenv('../')
+# Configuração de logs coloridos
+formatter = ColoredFormatter(
+    "%(log_color)s%(asctime)s | %(levelname)-8s | %(message)s",
+    log_colors={
+        'DEBUG': 'cyan',
+        'INFO': 'green',
+        'WARNING': 'yellow',
+        'ERROR': 'red',
+        'CRITICAL': 'bold_red',
+    }
+)
 
+handler = logging.StreamHandler()
+handler.setFormatter(formatter)
+
+logger = logging.getLogger("bitcoin_logger")
+logger.setLevel(logging.INFO)
+logger.handlers = [handler]
+
+# Carrega variáveis de ambiente
+load_dotenv('../')
 DATABASE_URL = os.getenv("DATABASE_KEY")
+
+# Configuração do banco
 engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
@@ -27,60 +50,66 @@ class BitcoinDados(Base):
                 f"cotacao='{self.cotacao}', timestamp='{self.timestamp}')>")
 
 
-# Cria a tabela (se não existir)
-Base.metadata.create_all(engine)
-# Base.metadata.drop_all(engine)
+# Cria a tabela se não existir
+try:
+    Base.metadata.create_all(engine)
+    logger.info("Tabela 'bitcoin_dados' verificada/criada com sucesso.")
+except Exception as e:
+    logger.error(f"Erro ao criar/verificar tabela no banco: {e}")
 
 
 def extrair_dados_bitcoin():
     url = "https://api.coinbase.com/v2/prices/spot"
-    response = requests.get(url)
-    return response.json()
-
-
-""" 
-def transformar_dados(dados):
-    valor = float(dados["data"]["amount"])
-    criptomoeda = dados["data"]["base"]
-    cotacao = dados["data"]["currency"]
-    dados_transformados = {
-        "valor": valor,
-        "criptomoeda": criptomoeda,
-        "cotacao": cotacao
-    }
-    return dados_transformados
- """
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        logger.info("✅ Dados extraídos da API.")
+        return response.json()
+    except requests.RequestException as e:
+        logger.warning(f"⚠️ Falha na requisição à API: {e}")
+        return None
 
 
 def transformar_dados_bitcoin(dados):
-    valor = float(dados["data"]["amount"])
-    criptomoeda = dados["data"]["base"]
-    cotacao = dados["data"]["currency"]
-    timestamp = datetime.now()
+    try:
+        valor = float(dados["data"]["amount"])
+        criptomoeda = dados["data"]["base"]
+        cotacao = dados["data"]["currency"]
+        timestamp = datetime.now()
 
-    dados_transformados = BitcoinDados(
-        valor=valor,
-        criptomoeda=criptomoeda,
-        cotacao=cotacao,
-        timestamp=timestamp
-    )
+        dados_transformados = BitcoinDados(
+            valor=valor,
+            criptomoeda=criptomoeda,
+            cotacao=cotacao,
+            timestamp=timestamp
+        )
 
-    return dados_transformados
+        logger.info(f"🔄 Dados transformados: {dados_transformados}")
+        return dados_transformados
+    except Exception as e:
+        logger.error(f"Erro ao transformar dados: {e}")
+        return None
 
 
 def salvar_dados_sqlalchemy(dados):
-    with Session() as session:
-        session.add(dados)
-        session.commit()
-        print("Dados salvos no PostgreSQL!")
+    try:
+        with Session() as session:
+            session.add(dados)
+            session.commit()
+            logger.info("💾 Dados salvos no PostgreSQL.")
+    except Exception as e:
+        logger.error(f"Erro ao salvar dados no banco: {e}")
 
 
 if __name__ == "__main__":
+    logger.info("🚀 Iniciando coleta de dados do Bitcoin...")
     while True:
         dados = extrair_dados_bitcoin()
-        dados_transformados = transformar_dados_bitcoin(dados)
-        print("Dados Tratados:")
-        print(dados_transformados)
-        salvar_dados_sqlalchemy(dados_transformados)
-        print("Aguardando 15 segundos...")
+        if dados:
+            dados_transformados = transformar_dados_bitcoin(dados)
+            if dados_transformados:
+                salvar_dados_sqlalchemy(dados_transformados)
+        else:
+            logger.warning("⚠️ Nenhum dado processado neste ciclo.")
+        logger.info("⏳ Aguardando 15 segundos...\n")
         time.sleep(15)
