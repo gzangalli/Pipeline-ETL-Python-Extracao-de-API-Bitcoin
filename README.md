@@ -4,10 +4,10 @@ Pipeline ETL Python - Extração de API Bitcoin realizado na live da Jornada de 
 Projeto realizado a fins de estudo
 
 ## Etapa pipeline
-![alt text](images/pipeline.png)
+![Etapa pipeline](images/pipeline.png)
 
 ## Etapa dashboard
-![alt text](images/dashboard.png)
+![Etapa dashboard](images/dashboard.png)
 
 ## Etapa agent AI
-![alt text](images/agent.png)
+![Etapa agent AI](images/agent.png)
